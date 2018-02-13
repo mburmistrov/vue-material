@@ -42,6 +42,10 @@
   import isPromise from 'is-promise'
   import MdPropValidator from 'core/utils/MdPropValidator'
 
+  const defaultGetPlainText = (item, el) => {
+    return el.textContent.trim()
+  }
+
   export default {
     name: 'MdAutocomplete',
     props: {
@@ -73,7 +77,8 @@
       mdInputName: String,
       mdInputId: String,
       mdInputMaxlength: [String, Number],
-      mdInputPlaceholder: [String, Number]
+      mdInputPlaceholder: [String, Number],
+      mdGetPlainText: [Function, null]
     },
     data () {
       return {
@@ -98,9 +103,6 @@
           return 'md-autocomplete-box-content'
         }
       },
-      shouldFilter () {
-        return this.mdOptions[0] && this.searchTerm
-      },
       filteredStaticOptions () {
         if (this.isPromise(this.mdOptions)) {
           return false
@@ -108,7 +110,7 @@
 
         const firstItem = this.mdOptions[0]
 
-        if (this.shouldFilter) {
+        if (this.mdOptions[0] && this.searchTerm) {
           if (typeof firstItem === 'string') {
             return this.filterByString()
           } else if (typeof firstItem === 'object') {
@@ -129,13 +131,11 @@
       mdOptions: {
         deep: true,
         immediate: true,
-        handler () {
+        async handler () {
           if (this.isPromise(this.mdOptions)) {
             this.isPromisePending = true
-            this.mdOptions.then(options => {
-              this.filteredAsyncOptions = options
-              this.isPromisePending = false
-            })
+            this.filteredAsyncOptions = await this.mdOptions
+            this.isPromisePending = false
           }
         }
       },
@@ -196,35 +196,28 @@
           this.$emit('md-changed', this.searchTerm)
         }
       },
-      showOptions () {
-        if (this.showMenu) {
-          return false
-        }
-
+      async showOptions () {
         this.showMenu = true
-        this.$nextTick().then(() => {
-          this.triggerPopover = true
-          this.$emit('md-opened')
-        })
+        await this.$nextTick()
+        this.triggerPopover = true
+        this.$emit('md-opened')
       },
-      hideOptions () {
-        const clearPopover = () => {
-          this.triggerPopover = false
-          this.$emit('md-closed')
-        }
-
-        this.$nextTick().then(() => {
-          this.showMenu = false
-          this.$nextTick().then(clearPopover)
-        })
+      async hideOptions () {
+        await this.$nextTick()
+        this.showMenu = false
+        await this.$nextTick()
+        this.triggerPopover = false
+        this.$emit('md-closed')
       },
-      selectItem (item, $event) {
-        const content = $event.target.textContent.trim()
+      async selectItem (item, $event) {
+        const getPlainText = this.mdGetPlainText || defaultGetPlainText
+        const content = getPlainText(item, $event.currentTarget)
 
         this.searchTerm = content
-        this.$emit('input', item)
-        this.$emit('md-selected', item)
         this.hideOptions()
+        // await next tick for case clearing selected on `v-model` change
+        await this.$nextTick()
+        this.$emit('md-selected', item)
       }
     }
   }
